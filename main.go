@@ -41,7 +41,7 @@ func parseArgs() {
 	option.String("server.addr", ":53",
 		"Address to bind. Default is udp port 53 on all interfaces.")
 	option.Int("server.cachesize", 1024,
-		"Query cache size for server.")
+		"Query cache size for server. 0 to disable cache, and -1 for unlimit size.")
 
 	option.String("log.level", "info",
 		"Verbose level. Supported levels: fatal, warn, info, debug")

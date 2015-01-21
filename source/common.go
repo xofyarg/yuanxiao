@@ -3,6 +3,7 @@ package source
 import (
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/miekg/dns"
@@ -16,7 +17,7 @@ var (
 
 type Source interface {
 	Reload(o map[string]string) error
-	Query(qname string, qtype uint16) ([]dns.RR, []dns.RR, []dns.RR)
+	Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR, []dns.RR)
 	IsAuth() bool
 }
 
@@ -62,10 +63,10 @@ type authBase struct {
 
 type authExt interface {
 	findNode(string) int
-	getRR(string, uint16) []dns.RR
+	getRR(string, uint16, net.IP) []dns.RR
 }
 
-func (a *authBase) query(qname string, qtype uint16) (an []dns.RR, ns []dns.RR, ex []dns.RR) {
+func (a *authBase) query(qname string, qtype uint16, ip net.IP) (an []dns.RR, ns []dns.RR, ex []dns.RR) {
 	// change rr's name to qname
 	defer func() {
 		an = a.applyName(an, qname)
@@ -79,14 +80,14 @@ func (a *authBase) query(qname string, qtype uint16) (an []dns.RR, ns []dns.RR, 
 	switch remains {
 	// normal case
 	case 0:
-		rr := a.getRR(qname, qtype)
+		rr := a.getRR(qname, qtype, ip)
 		if rr == nil {
 			if qtype == dns.TypeCNAME {
 				return
 			}
 
 			// TODO: start a sub query internally
-			rr := a.getRR(qname, dns.TypeCNAME)
+			rr := a.getRR(qname, dns.TypeCNAME, ip)
 			an = rr
 			return
 		}
@@ -103,13 +104,13 @@ func (a *authBase) query(qname string, qtype uint16) (an []dns.RR, ns []dns.RR, 
 
 		// try wildcard first
 		name := fmt.Sprintf("*.%s.", strings.Join(labels[remains:], "."))
-		an, ns, ex = a.query(name, qtype)
+		an, ns, ex = a.query(name, qtype, ip)
 		if an != nil || ns != nil || ex != nil {
 			return
 		}
 
 		name = fmt.Sprintf("%s.", strings.Join(labels[remains:], "."))
-		rr := a.getRR(name, dns.TypeNS)
+		rr := a.getRR(name, dns.TypeNS, ip)
 		if rr != nil {
 			an = nil
 			ns = rr
@@ -120,7 +121,7 @@ func (a *authBase) query(qname string, qtype uint16) (an []dns.RR, ns []dns.RR, 
 	// check domain delegation only
 	default:
 		name := fmt.Sprintf("%s.", strings.Join(labels[remains:], "."))
-		rr := a.getRR(name, dns.TypeNS)
+		rr := a.getRR(name, dns.TypeNS, ip)
 		if rr != nil {
 			an = nil
 			ns = rr
@@ -146,6 +147,76 @@ func (a *authBase) applyName(list []dns.RR, qname string) []dns.RR {
 		} else {
 			result[i] = list[i]
 		}
+	}
+	return result
+}
+
+// subnet record support
+type srecord struct {
+	r []dns.RR
+	n *net.IPNet
+}
+type Srecords struct {
+	d []*srecord
+}
+
+func NewSrecords() *Srecords {
+	return &Srecords{}
+}
+
+func (s *Srecords) Add(r dns.RR, n *net.IPNet) {
+	header := r.Header()
+	match := false
+	for _, v := range s.d {
+		if n.String() == v.n.String() {
+			// check if records has a cname. (p15 of rfc1034)
+			if header.Rrtype == dns.TypeCNAME {
+				log.Info("overwrite all the previous records by a CNAME record: %s", header.Name)
+				v.r = []dns.RR{r}
+			} else {
+				v.r = append(v.r, r)
+			}
+			match = true
+			break
+		}
+	}
+
+	if !match {
+		s.d = append(s.d, &srecord{r: []dns.RR{r}, n: n})
+	}
+}
+
+func (s *Srecords) Get(qtype uint16, ip net.IP) []dns.RR {
+	var min *srecord
+	for _, v := range s.d {
+		if !v.n.Contains(ip) {
+			continue
+		}
+
+		if min == nil {
+			min = v
+			continue
+		}
+
+		o1, _ := v.n.Mask.Size()
+		o2, _ := min.n.Mask.Size()
+		if o1 > o2 {
+			min = v
+			continue
+		}
+	}
+
+	if min == nil {
+		return nil
+	}
+
+	var result []dns.RR
+	for _, rr := range min.r {
+		if rr.Header().Rrtype != qtype && qtype != dns.TypeANY {
+			continue
+		}
+
+		result = append(result, rr)
 	}
 	return result
 }

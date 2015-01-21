@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/miekg/dns"
@@ -128,25 +129,44 @@ func rootHandler(w dns.ResponseWriter, m *dns.Msg) {
 	a := &dns.Msg{}
 	a.SetReply(m)
 
+	client := net.ParseIP(strings.Split(w.RemoteAddr().String(), ":")[0])
+	//   or from eDNS
+	if o := m.IsEdns0(); o != nil {
+		for _, v := range o.Option {
+			if e, ok := v.(*dns.EDNS0_SUBNET); ok {
+				client = e.Address
+				break
+			}
+		}
+	}
+	log.Debug("query from client: %s", client)
+
 	key := fmt.Sprintf("%s %s %s", q.Name, dns.ClassToString[q.Qclass], dns.TypeToString[q.Qtype])
 	if entry, ok := cache.Get(key); !ok {
 		for _, obj := range sources {
 			log.Debug("try to get answer from: %s", obj)
-			a.Answer, a.Ns, a.Extra = obj.Query(q.Name, q.Qtype)
+			a.Answer, a.Ns, a.Extra = obj.Query(q.Name, q.Qtype, client)
 			a.Authoritative = obj.IsAuth()
 			if a.Answer != nil || a.Ns != nil || a.Extra != nil {
 				break
 			}
 		}
 
-		e := &CacheEntry{
-			an: a.Answer,
-			ns: a.Ns,
-			ex: a.Extra,
-			aa: a.Authoritative,
+		if len(a.Answer) != 0 ||
+			len(a.Ns) != 0 ||
+			len(a.Extra) != 0 {
+
+			e := &CacheEntry{
+				an: a.Answer,
+				ns: a.Ns,
+				ex: a.Extra,
+				aa: a.Authoritative,
+			}
+			cache.Put(key, e)
+			log.Debug("add to cache: %s", key)
+		} else {
+			log.Debug("ignore empty answer: %s", key)
 		}
-		cache.Put(key, e)
-		log.Debug("add to cache: %s", key)
 	} else {
 		log.Debug("get from cache: %s", key)
 		a.Answer = entry.an

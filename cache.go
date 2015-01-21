@@ -22,12 +22,25 @@ type CacheEntry struct {
 }
 
 func NewCache(size int) *Cache {
-	return &Cache{
-		lru: lru.New(size),
+	switch size {
+	case 0:
+		return &Cache{}
+	case -1:
+		return &Cache{
+			lru: lru.New(0),
+		}
+	default:
+		return &Cache{
+			lru: lru.New(size),
+		}
 	}
 }
 
 func (c *Cache) Put(key string, e *CacheEntry) {
+	if c.lru == nil {
+		return
+	}
+
 	// already in cache
 	c.Lock()
 	defer c.Unlock()
@@ -38,6 +51,10 @@ func (c *Cache) Put(key string, e *CacheEntry) {
 }
 
 func (c *Cache) Get(key string) (*CacheEntry, bool) {
+	if c.lru == nil {
+		return nil, false
+	}
+
 	c.Lock()
 	defer c.Unlock()
 	value, ok := c.lru.Get(key)

@@ -2,6 +2,7 @@ package source
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,7 +87,7 @@ func (e *etcd) Reload(o map[string]string) error {
 	return nil
 }
 
-func (e *etcd) Query(qname string, qtype uint16) ([]dns.RR, []dns.RR, []dns.RR) {
+func (e *etcd) Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR, []dns.RR) {
 	if !e.init {
 		panic(ErrSourceNotInit.Error())
 	}
@@ -95,7 +96,7 @@ func (e *etcd) Query(qname string, qtype uint16) ([]dns.RR, []dns.RR, []dns.RR) 
 	defer e.RUnlock()
 
 	a := &authBase{e}
-	return a.query(qname, qtype)
+	return a.query(qname, qtype, ip)
 }
 
 func (e *etcd) IsAuth() bool {
@@ -146,7 +147,7 @@ func (e *etcd) findNode(qname string) int {
 	return len(labels)
 }
 
-func (e *etcd) getRR(qname string, qtype uint16) []dns.RR {
+func (e *etcd) getRR(qname string, qtype uint16, ip net.IP) []dns.RR {
 	qname = strings.ToLower(qname)
 	labels := dns.SplitDomainName(qname)
 	reverseSlice(labels)

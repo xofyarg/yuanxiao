@@ -3,6 +3,7 @@ package source
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,26 +30,26 @@ func (p *plain) String() string {
 }
 
 type node struct {
-	records []dns.RR
+	records *Srecords
 	sub     map[string]*node
 }
 
-func (n *node) String() string {
-	var f func(*node) string
-	f = func(n *node) string {
-		c := ""
-		for _, rr := range n.records {
-			c += rr.String() + "\n"
-		}
+// func (n *node) String() string {
+// 	var f func(*node) string
+// 	f = func(n *node) string {
+// 		c := ""
+// 		for _, rr := range n.records {
+// 			c += rr.String() + "\n"
+// 		}
 
-		for _, sn := range n.sub {
-			c += f(sn)
-		}
-		return c
-	}
+// 		for _, sn := range n.sub {
+// 			c += f(sn)
+// 		}
+// 		return c
+// 	}
 
-	return f(n)
-}
+// 	return f(n)
+// }
 
 func (p *plain) Reload(o map[string]string) error {
 	var key string
@@ -73,7 +74,7 @@ func (p *plain) Reload(o map[string]string) error {
 }
 
 // implement algorithm described in p24 of rfc1034.
-func (p *plain) Query(qname string, qtype uint16) ([]dns.RR, []dns.RR, []dns.RR) {
+func (p *plain) Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR, []dns.RR) {
 	if !p.init {
 		panic(ErrSourceNotInit.Error())
 	}
@@ -82,7 +83,7 @@ func (p *plain) Query(qname string, qtype uint16) ([]dns.RR, []dns.RR, []dns.RR)
 	defer p.RUnlock()
 
 	a := &authBase{p}
-	return a.query(qname, qtype)
+	return a.query(qname, qtype, ip)
 }
 
 func (p *plain) IsAuth() bool {
@@ -105,7 +106,7 @@ func (p *plain) findNode(qname string) int {
 	return 0
 }
 
-func (p *plain) getRR(qname string, qtype uint16) []dns.RR {
+func (p *plain) getRR(qname string, qtype uint16, ip net.IP) []dns.RR {
 	qname = strings.ToLower(qname)
 	labels := dns.SplitDomainName(qname)
 	reverseSlice(labels)
@@ -115,16 +116,7 @@ func (p *plain) getRR(qname string, qtype uint16) []dns.RR {
 		ptr = ptr.sub[labels[i]]
 	}
 
-	var result []dns.RR
-	for _, rr := range ptr.records {
-		if rr.Header().Rrtype != qtype && qtype != dns.TypeANY {
-			continue
-		}
-
-		result = append(result, rr)
-	}
-
-	return result
+	return ptr.records.Get(qtype, ip)
 }
 
 func plainLoad(path string) (*node, error) {
@@ -169,17 +161,31 @@ func plainLoadFile(path string, root *node) error {
 	defer f.Close()
 
 	r := dns.ParseZone(f, ".", "")
+
+	var cidr string
+	base := filepath.Base(path)
+	i := strings.LastIndex(base, ".")
+	if i != -1 {
+		cidr = base[:i] + "/" + base[i+1:]
+	}
+
+	_, sub, err := net.ParseCIDR(cidr)
+	if err != nil {
+		_, sub, _ = net.ParseCIDR("0.0.0.0/0")
+	}
+
 	for t := range r {
 		if t.Error != nil {
 			return t.Error
 		}
 
-		plainAddToNode(root, t.RR)
+		log.Debug("add to tree: %s [%s]", t.RR, sub)
+		plainAddToNode(root, sub, t.RR)
 	}
 	return nil
 }
 
-func plainAddToNode(n *node, rr dns.RR) {
+func plainAddToNode(n *node, sub *net.IPNet, rr dns.RR) {
 
 	header := rr.Header()
 	labels := dns.SplitDomainName(header.Name)
@@ -199,20 +205,13 @@ func plainAddToNode(n *node, rr dns.RR) {
 		}
 	}
 
-	// check if records has a cname. (p15 of rfc1034)
-	if header.Rrtype == dns.TypeCNAME {
-		if len(ptr.records) != 0 {
-			log.Debug("overwrite all the previous records by a CNAME record: %s", header.Name)
-		}
-		ptr.records = []dns.RR{rr}
-	} else {
-		ptr.records = append(ptr.records, rr)
-	}
+	ptr.records.Add(rr, sub)
 	//log.Debug("added to node: [%s]", rr)
 }
 
 func plainNewNode() *node {
 	return &node{
-		sub: make(map[string]*node),
+		records: NewSrecords(),
+		sub:     make(map[string]*node),
 	}
 }

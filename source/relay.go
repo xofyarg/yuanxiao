@@ -123,7 +123,7 @@ func (r *relay) Reload(o map[string]string) error {
 	return nil
 }
 
-func (r *relay) Query(qname string, qtype uint16) ([]dns.RR, []dns.RR, []dns.RR) {
+func (r *relay) Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR, []dns.RR) {
 	if !r.init {
 		panic(ErrSourceNotInit.Error())
 	}
