@@ -49,7 +49,7 @@ func serverInit() error {
 		log.Info("source %s loaded", s)
 	}
 
-	cache = NewCache(option.GetInt("server.cachesize"))
+	cache = NewCache(option.GetInt("server.cache.size"), option.GetDuration("server.cache.timeout"))
 
 	server = &dns.Server{}
 	server.Addr = option.GetString("server.addr")
@@ -143,36 +143,52 @@ func rootHandler(w dns.ResponseWriter, m *dns.Msg) {
 
 	key := fmt.Sprintf("%s %s %s", q.Name, dns.ClassToString[q.Qclass], dns.TypeToString[q.Qtype])
 	if entry, ok := cache.Get(key); !ok {
-		for _, obj := range sources {
+		var answer *source.Answer
+		delegation := false
+		auth := false
+		for i, obj := range sources {
 			log.Debug("try to get answer from: %s", obj)
-			a.Answer, a.Ns, a.Extra = obj.Query(q.Name, q.Qtype, client)
-			a.Authoritative = obj.IsAuth()
-			if a.Answer != nil || a.Ns != nil || a.Extra != nil {
+			answer = obj.Query(q.Name, q.Qtype, client)
+
+			if i == 0 {
+				auth = answer.Auth
+			}
+
+			if answer.Rcode == dns.RcodeSuccess {
+				delegation = true
+			}
+
+			if answer.An != nil || answer.Ns != nil || answer.Ex != nil {
 				break
 			}
 		}
 
-		if len(a.Answer) != 0 ||
-			len(a.Ns) != 0 ||
-			len(a.Extra) != 0 {
-
-			e := &CacheEntry{
-				an: a.Answer,
-				ns: a.Ns,
-				ex: a.Extra,
-				aa: a.Authoritative,
+		// override other answer if we have this zone in one source.
+		// meanwhile, we change the authoritative according to the
+		// first source.
+		if delegation && answer.Rcode == dns.RcodeNameError {
+			answer.Rcode = dns.RcodeSuccess
+			if auth {
+				answer.Auth = true
 			}
-			cache.Put(key, e)
-			log.Debug("add to cache: %s", key)
-		} else {
-			log.Debug("ignore empty answer: %s", key)
 		}
+
+		a.Answer = answer.An
+		a.Ns = answer.Ns
+		a.Extra = answer.Ex
+		a.Authoritative = answer.Auth
+		a.Rcode = answer.Rcode
+
+		// put into cache
+		cache.Put(key, answer)
+		log.Debug("add to cache: %s", key)
 	} else {
 		log.Debug("get from cache: %s", key)
-		a.Answer = entry.an
-		a.Ns = entry.ns
-		a.Extra = entry.ex
-		a.Authoritative = entry.aa
+		a.Answer = entry.An
+		a.Ns = entry.Ns
+		a.Extra = entry.Ex
+		a.Authoritative = entry.Auth
+		a.Rcode = entry.Rcode
 	}
 
 	a.RecursionAvailable = false

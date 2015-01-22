@@ -74,7 +74,7 @@ func (p *plain) Reload(o map[string]string) error {
 }
 
 // implement algorithm described in p24 of rfc1034.
-func (p *plain) Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR, []dns.RR) {
+func (p *plain) Query(qname string, qtype uint16, ip net.IP) *Answer {
 	if !p.init {
 		panic(ErrSourceNotInit.Error())
 	}
@@ -83,7 +83,9 @@ func (p *plain) Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR
 	defer p.RUnlock()
 
 	a := &authBase{p}
-	return a.query(qname, qtype, ip)
+	ans := a.query(qname, qtype, ip)
+	ans.Auth = true
+	return ans
 }
 
 func (p *plain) IsAuth() bool {

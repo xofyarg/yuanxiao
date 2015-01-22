@@ -1,6 +1,7 @@
 package source
 
 import (
+	"net"
 	"testing"
 
 	"github.com/miekg/dns"
@@ -31,7 +32,7 @@ func (a *ae) findNode(qname string) int {
 	return a.remains[i]
 }
 
-func (a *ae) getRR(qname string, qtype uint16) []dns.RR {
+func (a *ae) getRR(qname string, qtype uint16, ip net.IP) []dns.RR {
 	i := a.rrIndex
 	if i >= len(a.rr) {
 		i = len(a.rr) - 1
@@ -75,17 +76,17 @@ func checkBaseQuery(t *testing.T, a *ae) {
 	a.ns = normalize(a.ns)
 	a.ex = normalize(a.ex)
 
-	an, ns, ex := ab.query(a.qname, dns.StringToType[a.qtype])
-	if !equalFirst(an, a.an) {
-		t.Errorf("answer not equal: %s != %s", an, a.an)
+	ans := ab.query(a.qname, dns.StringToType[a.qtype], nil)
+	if !equalFirst(ans.An, a.an) {
+		t.Errorf("answer not equal: %s != %s", ans.An, a.an)
 	}
 
-	if !equalFirst(ns, a.ns) {
-		t.Errorf("authority not equal: %s != %s", ns, a.ns)
+	if !equalFirst(ans.Ns, a.ns) {
+		t.Errorf("authority not equal: %s != %s", ans.Ns, a.ns)
 	}
 
-	if !equalFirst(ex, a.ex) {
-		t.Errorf("additional not equal: %s != %s", ex, a.ex)
+	if !equalFirst(ans.Ex, a.ex) {
+		t.Errorf("additional not equal: %s != %s", ans.Ex, a.ex)
 	}
 }
 

@@ -87,7 +87,7 @@ func (e *etcd) Reload(o map[string]string) error {
 	return nil
 }
 
-func (e *etcd) Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR, []dns.RR) {
+func (e *etcd) Query(qname string, qtype uint16, ip net.IP) *Answer {
 	if !e.init {
 		panic(ErrSourceNotInit.Error())
 	}
@@ -96,7 +96,9 @@ func (e *etcd) Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR,
 	defer e.RUnlock()
 
 	a := &authBase{e}
-	return a.query(qname, qtype, ip)
+	ans := a.query(qname, qtype, ip)
+	ans.Auth = true
+	return ans
 }
 
 func (e *etcd) IsAuth() bool {

@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"repo.anb.im/goutil/log"
 	"repo.anb.im/goutil/option"
@@ -15,6 +18,13 @@ import (
 func main() {
 	parseArgs()
 	go setupSignals()
+
+	if addr := option.GetString("server.pprof.addr"); addr != "" {
+		go func() {
+			err := http.ListenAndServe(addr, nil)
+			log.Warn("cannot start pprof server: %s", err)
+		}()
+	}
 
 	if err := serverInit(); err != nil {
 		log.Fatal("server init: %s", err)
@@ -37,15 +47,21 @@ func parseArgs() {
 	option.Bool("source.list", false,
 		"Enabled source and their order. Builtin sources can be accquired by source.list.")
 
-	// normal options
+	// server options
 	option.String("server.addr", ":53",
 		"Address to bind. Default is udp port 53 on all interfaces.")
-	option.Int("server.cachesize", 1024,
+	option.Int("server.cache.size", 1024,
 		"Query cache size for server. 0 to disable cache, and -1 for unlimit size.")
+	option.Duration("server.cache.timeout", 1*time.Minute, "Cache entry timeout for server.")
+	option.String("server.pprof.addr", "", "http address for pprof, leave blank to disable.")
 
+	// log options
 	option.String("log.level", "info",
 		"Verbose level. Supported levels: fatal, warn, info, debug")
 
+	// source options
+	// NOTE: all source options should be in string type to forward to
+	// sources
 	option.String("source.enable", "",
 		"Enabled source and their order. Builtin sources can be accquired by source.list.")
 

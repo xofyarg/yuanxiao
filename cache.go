@@ -8,49 +8,54 @@ import (
 	"github.com/miekg/dns"
 
 	"repo.anb.im/goutil/log"
+
+	"repo.anb.im/yuanxiao/source"
 )
 
 type Cache struct {
-	lru *lru.Cache
+	lru     *lru.Cache
+	timeout time.Duration
 	sync.Mutex
 }
 
-type CacheEntry struct {
-	an, ns, ex []dns.RR
-	aa         bool
-	ts         time.Time
+type cacheEntry struct {
+	ans *source.Answer
+	ts  time.Time
 }
 
-func NewCache(size int) *Cache {
+func NewCache(size int, to time.Duration) *Cache {
 	switch size {
 	case 0:
 		return &Cache{}
 	case -1:
 		return &Cache{
-			lru: lru.New(0),
+			lru:     lru.New(0),
+			timeout: to,
 		}
 	default:
 		return &Cache{
-			lru: lru.New(size),
+			lru:     lru.New(size),
+			timeout: to,
 		}
 	}
 }
 
-func (c *Cache) Put(key string, e *CacheEntry) {
+func (c *Cache) Put(key string, a *source.Answer) {
 	if c.lru == nil {
 		return
 	}
 
-	// already in cache
 	c.Lock()
 	defer c.Unlock()
 
+	e := &cacheEntry{}
 	e.ts = time.Now()
+	e.ans = a
 
 	c.lru.Add(key, e)
 }
 
-func (c *Cache) Get(key string) (*CacheEntry, bool) {
+func (c *Cache) Get(key string) (*source.Answer, bool) {
 	if c.lru == nil {
 		return nil, false
 	}
@@ -63,21 +68,27 @@ func (c *Cache) Get(key string) (*CacheEntry, bool) {
 		return nil, false
 	}
 
-	entry := value.(*CacheEntry)
-	elapse := uint32(time.Since(entry.ts).Seconds())
-	newentry := &CacheEntry{}
+	entry := value.(*cacheEntry)
+	elapse := time.Since(entry.ts)
+	if elapse > c.timeout {
+		return nil, false
+	}
 
-	if newentry.an, ok = checkTTL(entry.an, elapse); !ok {
+	delta := uint32(elapse.Seconds())
+	newans := &source.Answer{}
+
+	if newans.An, ok = checkTTL(entry.ans.An, delta); !ok {
 		return nil, false
 	}
-	if newentry.ns, ok = checkTTL(entry.ns, elapse); !ok {
+	if newans.Ns, ok = checkTTL(entry.ans.Ns, delta); !ok {
 		return nil, false
 	}
-	if newentry.ex, ok = checkTTL(entry.ex, elapse); !ok {
+	if newans.Ex, ok = checkTTL(entry.ans.Ex, delta); !ok {
 		return nil, false
 	}
-	newentry.aa = entry.aa
-	return newentry, true
+	newans.Auth = entry.ans.Auth
+	newans.Rcode = entry.ans.Rcode
+	return newans, true
 }
 
 func checkTTL(sec []dns.RR, elapse uint32) ([]dns.RR, bool) {

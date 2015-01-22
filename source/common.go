@@ -17,7 +17,7 @@ var (
 
 type Source interface {
 	Reload(o map[string]string) error
-	Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR, []dns.RR)
+	Query(qname string, qtype uint16, ip net.IP) *Answer
 	IsAuth() bool
 }
 
@@ -26,6 +26,12 @@ var Sources = map[string]Source{}
 func registerSource(name string, obj Source) {
 	Sources[name] = obj
 	log.Info("register a source: %s", name)
+}
+
+type Answer struct {
+	An, Ns, Ex []dns.RR
+	Rcode      int
+	Auth       bool
 }
 
 func makeErr(v ...interface{}) error {
@@ -66,12 +72,18 @@ type authExt interface {
 	getRR(string, uint16, net.IP) []dns.RR
 }
 
-func (a *authBase) query(qname string, qtype uint16, ip net.IP) (an []dns.RR, ns []dns.RR, ex []dns.RR) {
+func (a *authBase) query(qname string, qtype uint16, ip net.IP) *Answer {
+	ans := &Answer{}
+
 	// change rr's name to qname
 	defer func() {
-		an = a.applyName(an, qname)
-		ns = a.applyName(ns, qname)
-		ex = a.applyName(ex, qname)
+		if ans == nil {
+			return
+		}
+
+		ans.An = a.applyName(ans.An, qname)
+		ans.Ns = a.applyName(ans.Ns, qname)
+		ans.Ex = a.applyName(ans.Ex, qname)
 	}()
 
 	labels := dns.SplitDomainName(qname)
@@ -83,54 +95,67 @@ func (a *authBase) query(qname string, qtype uint16, ip net.IP) (an []dns.RR, ns
 		rr := a.getRR(qname, qtype, ip)
 		if rr == nil {
 			if qtype == dns.TypeCNAME {
-				return
+				ans.Rcode = dns.RcodeSuccess
+				return ans
 			}
 
 			// TODO: start a sub query internally
 			rr := a.getRR(qname, dns.TypeCNAME, ip)
-			an = rr
-			return
+			ans.An = rr
+			ans.Rcode = dns.RcodeSuccess
+			return ans
 		}
 
-		an = rr
-		return
+		ans.An = rr
+		ans.Rcode = dns.RcodeSuccess
+		return ans
 
 	// need to check wildcard and domain delegation
 	case 1:
 		// check if already a wildcard query
 		if labels[0] == "*" {
-			return
+			ans.Rcode = dns.RcodeNameError
+			return ans
 		}
 
 		// try wildcard first
 		name := fmt.Sprintf("*.%s.", strings.Join(labels[remains:], "."))
-		an, ns, ex = a.query(name, qtype, ip)
-		if an != nil || ns != nil || ex != nil {
-			return
+		ans = a.query(name, qtype, ip)
+		if ans.Rcode != dns.RcodeNameError {
+			return ans
 		}
 
 		name = fmt.Sprintf("%s.", strings.Join(labels[remains:], "."))
 		rr := a.getRR(name, dns.TypeNS, ip)
 		if rr != nil {
-			an = nil
-			ns = rr
-			ex = nil
-			return
+			ans.An = nil
+			ans.Ns = rr
+			ans.Ex = nil
+			ans.Rcode = dns.RcodeSuccess
+			return ans
 		}
+
+		ans.Rcode = dns.RcodeNameError
+		return ans
 
 	// check domain delegation only
 	default:
 		name := fmt.Sprintf("%s.", strings.Join(labels[remains:], "."))
 		rr := a.getRR(name, dns.TypeNS, ip)
 		if rr != nil {
-			an = nil
-			ns = rr
-			ex = nil
-			return
+			ans.An = nil
+			ans.Ns = rr
+			ans.Ex = nil
+			ans.Rcode = dns.RcodeSuccess
+			return ans
 		}
+
+		ans.Rcode = dns.RcodeNameError
+		return ans
 	}
 
-	return
+	panic("should not reach here")
+	//return ans
 }
 
 func (a *authBase) applyName(list []dns.RR, qname string) []dns.RR {

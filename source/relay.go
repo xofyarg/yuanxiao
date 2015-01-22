@@ -123,7 +123,7 @@ func (r *relay) Reload(o map[string]string) error {
 	return nil
 }
 
-func (r *relay) Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR, []dns.RR) {
+func (r *relay) Query(qname string, qtype uint16, ip net.IP) *Answer {
 	if !r.init {
 		panic(ErrSourceNotInit.Error())
 	}
@@ -152,13 +152,19 @@ func (r *relay) Query(qname string, qtype uint16, ip net.IP) ([]dns.RR, []dns.RR
 		}
 	}
 
+	ans := &Answer{
+		Rcode: dns.RcodeSuccess,
+		Auth:  false,
+	}
 	a := relayChoose(results)
-
-	if a == nil {
-		return nil, nil, nil
+	if a != nil {
+		ans.An = a.Answer
+		ans.Ns = a.Ns
+		ans.Ex = a.Extra
+		ans.Rcode = a.Rcode
 	}
 
-	return a.Answer, a.Ns, a.Extra
+	return ans
 }
 
 func relayResolve(upstream *resolver, delay time.Duration,
