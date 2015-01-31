@@ -87,7 +87,7 @@ func (e *etcd) Reload(o map[string]string) error {
 	return nil
 }
 
-func (e *etcd) Query(qname string, qtype uint16, ip net.IP) *Answer {
+func (e *etcd) Query(qname string, qtype uint16, client net.IPNet) *Answer {
 	if !e.init {
 		panic(ErrSourceNotInit.Error())
 	}
@@ -96,13 +96,10 @@ func (e *etcd) Query(qname string, qtype uint16, ip net.IP) *Answer {
 	defer e.RUnlock()
 
 	a := &authBase{e}
-	ans := a.query(qname, qtype, ip)
+	ans := a.query(qname, qtype, client)
 	ans.Auth = true
+	ans.RA = false
 	return ans
-}
-
-func (e *etcd) IsAuth() bool {
-	return true
 }
 
 func (e *etcd) Get(key string) *client.Response {
@@ -149,7 +146,7 @@ func (e *etcd) findNode(qname string) int {
 	return len(labels)
 }
 
-func (e *etcd) getRR(qname string, qtype uint16, ip net.IP) []dns.RR {
+func (e *etcd) getRR(qname string, qtype uint16, client net.IPNet) []dns.RR {
 	qname = strings.ToLower(qname)
 	labels := dns.SplitDomainName(qname)
 	reverseSlice(labels)

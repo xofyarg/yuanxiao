@@ -39,10 +39,6 @@ func (r *relay) String() string {
 	return "[source.relay]"
 }
 
-func (r *relay) IsAuth() bool {
-	return false
-}
-
 func (r *relay) Reload(o map[string]string) error {
 	var (
 		err       error
@@ -123,7 +119,7 @@ func (r *relay) Reload(o map[string]string) error {
 	return nil
 }
 
-func (r *relay) Query(qname string, qtype uint16, ip net.IP) *Answer {
+func (r *relay) Query(qname string, qtype uint16, client net.IPNet) *Answer {
 	if !r.init {
 		panic(ErrSourceNotInit.Error())
 	}
@@ -155,6 +151,7 @@ func (r *relay) Query(qname string, qtype uint16, ip net.IP) *Answer {
 	ans := &Answer{
 		Rcode: dns.RcodeSuccess,
 		Auth:  false,
+		RA:    true,
 	}
 	a := relayChoose(results)
 	if a != nil {

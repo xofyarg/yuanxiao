@@ -129,12 +129,25 @@ func rootHandler(w dns.ResponseWriter, m *dns.Msg) {
 	a := &dns.Msg{}
 	a.SetReply(m)
 
-	client := net.ParseIP(strings.Split(w.RemoteAddr().String(), ":")[0])
+	// TODO: add ipv6 support
+	client := net.IPNet{
+		IP:   net.ParseIP(strings.Split(w.RemoteAddr().String(), ":")[0]),
+		Mask: net.CIDRMask(net.IPv4len*8, net.IPv4len*8),
+	}
+
 	//   or from eDNS
 	if o := m.IsEdns0(); o != nil {
 		for _, v := range o.Option {
 			if e, ok := v.(*dns.EDNS0_SUBNET); ok {
-				client = e.Address
+				switch e.Family {
+				case 1: // IPv4
+					client = net.IPNet{
+						IP:   e.Address,
+						Mask: net.CIDRMask(int(e.SourceNetmask), net.IPv4len*8),
+					}
+				case 2: // IPv6
+				default:
+				}
 				break
 			}
 		}
@@ -145,31 +158,25 @@ func rootHandler(w dns.ResponseWriter, m *dns.Msg) {
 	if entry, ok := cache.Get(key); !ok {
 		var answer *source.Answer
 		delegation := false
-		auth := false
-		for i, obj := range sources {
+		recursion := false
+		for _, obj := range sources {
 			log.Debug("try to get answer from: %s", obj)
 			answer = obj.Query(q.Name, q.Qtype, client)
 
-			if i == 0 {
-				auth = answer.Auth
+			// if one of the sources is authoritative, also has this
+			// domain, the final answer should be authoritative.
+			if answer.Rcode == dns.RcodeSuccess && answer.Auth {
+				delegation = true
 			}
 
-			if answer.Rcode == dns.RcodeSuccess {
-				delegation = true
+			// accept recursive query if one of the sources support
+			// this
+			if answer.RA {
+				recursion = true
 			}
 
 			if answer.An != nil || answer.Ns != nil || answer.Ex != nil {
 				break
-			}
-		}
-
-		// override other answer if we have this zone in one source.
-		// meanwhile, we change the authoritative according to the
-		// first source.
-		if delegation && answer.Rcode == dns.RcodeNameError {
-			answer.Rcode = dns.RcodeSuccess
-			if auth {
-				answer.Auth = true
 			}
 		}
 
@@ -178,6 +185,15 @@ func rootHandler(w dns.ResponseWriter, m *dns.Msg) {
 		a.Extra = answer.Ex
 		a.Authoritative = answer.Auth
 		a.Rcode = answer.Rcode
+		a.RecursionAvailable = recursion
+
+		// postfix for flags
+		if delegation {
+			a.Authoritative = true
+			if a.Rcode == dns.RcodeNameError {
+				a.Rcode = dns.RcodeSuccess
+			}
+		}
 
 		// put into cache
 		cache.Put(key, answer)
@@ -191,7 +207,6 @@ func rootHandler(w dns.ResponseWriter, m *dns.Msg) {
 		a.Rcode = entry.Rcode
 	}
 
-	a.RecursionAvailable = false
 	w.WriteMsg(a)
 }
 

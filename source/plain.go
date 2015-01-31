@@ -74,7 +74,7 @@ func (p *plain) Reload(o map[string]string) error {
 }
 
 // implement algorithm described in p24 of rfc1034.
-func (p *plain) Query(qname string, qtype uint16, ip net.IP) *Answer {
+func (p *plain) Query(qname string, qtype uint16, client net.IPNet) *Answer {
 	if !p.init {
 		panic(ErrSourceNotInit.Error())
 	}
@@ -83,13 +83,10 @@ func (p *plain) Query(qname string, qtype uint16, ip net.IP) *Answer {
 	defer p.RUnlock()
 
 	a := &authBase{p}
-	ans := a.query(qname, qtype, ip)
+	ans := a.query(qname, qtype, client)
 	ans.Auth = true
+	ans.RA = false
 	return ans
-}
-
-func (p *plain) IsAuth() bool {
-	return true
 }
 
 func (p *plain) findNode(qname string) int {
@@ -108,7 +105,7 @@ func (p *plain) findNode(qname string) int {
 	return 0
 }
 
-func (p *plain) getRR(qname string, qtype uint16, ip net.IP) []dns.RR {
+func (p *plain) getRR(qname string, qtype uint16, client net.IPNet) []dns.RR {
 	qname = strings.ToLower(qname)
 	labels := dns.SplitDomainName(qname)
 	reverseSlice(labels)
@@ -118,7 +115,7 @@ func (p *plain) getRR(qname string, qtype uint16, ip net.IP) []dns.RR {
 		ptr = ptr.sub[labels[i]]
 	}
 
-	return ptr.records.Get(qtype, ip)
+	return ptr.records.Get(qtype, client)
 }
 
 func plainLoad(path string) (*node, error) {

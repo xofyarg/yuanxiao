@@ -17,8 +17,7 @@ var (
 
 type Source interface {
 	Reload(o map[string]string) error
-	Query(qname string, qtype uint16, ip net.IP) *Answer
-	IsAuth() bool
+	Query(qname string, qtype uint16, client net.IPNet) *Answer
 }
 
 var Sources = map[string]Source{}
@@ -32,6 +31,7 @@ type Answer struct {
 	An, Ns, Ex []dns.RR
 	Rcode      int
 	Auth       bool
+	RA         bool
 }
 
 func makeErr(v ...interface{}) error {
@@ -69,10 +69,10 @@ type authBase struct {
 
 type authExt interface {
 	findNode(string) int
-	getRR(string, uint16, net.IP) []dns.RR
+	getRR(string, uint16, net.IPNet) []dns.RR
 }
 
-func (a *authBase) query(qname string, qtype uint16, ip net.IP) *Answer {
+func (a *authBase) query(qname string, qtype uint16, client net.IPNet) *Answer {
 	ans := &Answer{}
 
 	// change rr's name to qname
@@ -92,7 +92,7 @@ func (a *authBase) query(qname string, qtype uint16, ip net.IP) *Answer {
 	switch remains {
 	// normal case
 	case 0:
-		rr := a.getRR(qname, qtype, ip)
+		rr := a.getRR(qname, qtype, client)
 		if rr == nil {
 			if qtype == dns.TypeCNAME {
 				ans.Rcode = dns.RcodeSuccess
@@ -100,7 +100,7 @@ func (a *authBase) query(qname string, qtype uint16, ip net.IP) *Answer {
 			}
 
 			// TODO: start a sub query internally
-			rr := a.getRR(qname, dns.TypeCNAME, ip)
+			rr := a.getRR(qname, dns.TypeCNAME, client)
 			ans.An = rr
 			ans.Rcode = dns.RcodeSuccess
 			return ans
@@ -120,13 +120,13 @@ func (a *authBase) query(qname string, qtype uint16, ip net.IP) *Answer {
 
 		// try wildcard first
 		name := fmt.Sprintf("*.%s.", strings.Join(labels[remains:], "."))
-		ans = a.query(name, qtype, ip)
+		ans = a.query(name, qtype, client)
 		if ans.Rcode != dns.RcodeNameError {
 			return ans
 		}
 
 		name = fmt.Sprintf("%s.", strings.Join(labels[remains:], "."))
-		rr := a.getRR(name, dns.TypeNS, ip)
+		rr := a.getRR(name, dns.TypeNS, client)
 		if rr != nil {
 			ans.An = nil
 			ans.Ns = rr
@@ -141,7 +141,7 @@ func (a *authBase) query(qname string, qtype uint16, ip net.IP) *Answer {
 	// check domain delegation only
 	default:
 		name := fmt.Sprintf("%s.", strings.Join(labels[remains:], "."))
-		rr := a.getRR(name, dns.TypeNS, ip)
+		rr := a.getRR(name, dns.TypeNS, client)
 		if rr != nil {
 			ans.An = nil
 			ans.Ns = rr
@@ -211,10 +211,16 @@ func (s *Srecords) Add(r dns.RR, n *net.IPNet) {
 	}
 }
 
-func (s *Srecords) Get(qtype uint16, ip net.IP) []dns.RR {
+func (s *Srecords) Get(qtype uint16, sn net.IPNet) []dns.RR {
 	var min *srecord
+	// find a subnet contains sn
 	for _, v := range s.d {
-		if !v.n.Contains(ip) {
+		o1, _ := v.n.Mask.Size()
+		o2, _ := sn.Mask.Size()
+		if o1 > o2 {
+			continue
+		}
+		if !v.n.Contains(sn.IP) {
 			continue
 		}
 
@@ -223,9 +229,8 @@ func (s *Srecords) Get(qtype uint16, ip net.IP) []dns.RR {
 			continue
 		}
 
-		o1, _ := v.n.Mask.Size()
-		o2, _ := min.n.Mask.Size()
-		if o1 > o2 {
+		o3, _ := min.n.Mask.Size()
+		if o1 > o3 {
 			min = v
 			continue
 		}
