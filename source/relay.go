@@ -126,9 +126,10 @@ func (r *relay) Query(qname string, qtype uint16, client net.IPNet) *Answer {
 
 	r.RLock()
 	delay := r.delay
-	out := make(chan *result, len(r.upstreams))
+	upCount := len(r.upstreams)
+	out := make(chan *result, upCount)
 	for _, u := range r.upstreams {
-		go relayResolve(u, delay, qname, qtype, out)
+		go relayResolve(u, r.timeout, delay, qname, qtype, out)
 	}
 	to := time.After(r.timeout)
 	r.RUnlock()
@@ -139,8 +140,8 @@ func (r *relay) Query(qname string, qtype uint16, client net.IPNet) *Answer {
 		select {
 		case res := <-out:
 			results = append(results, res)
-			// don't wait if no delay, or wait until timeout
-			if delay == 0 {
+			// don't wait if no delay, or every upstream has returned
+			if delay == 0 || len(results) == upCount {
 				done = true
 			}
 		case <-to:
@@ -164,7 +165,8 @@ func (r *relay) Query(qname string, qtype uint16, client net.IPNet) *Answer {
 	return ans
 }
 
-func relayResolve(upstream *resolver, delay time.Duration,
+func relayResolve(upstream *resolver,
+	timeout time.Duration, delay time.Duration,
 	qname string, qtype uint16, out chan *result) {
 	res := &result{
 		upstream: upstream,
@@ -174,17 +176,20 @@ func relayResolve(upstream *resolver, delay time.Duration,
 	m.RecursionDesired = true
 	m.SetQuestion(qname, qtype)
 
-	conn, err := dns.Dial("udp", upstream.addr)
+	conn, err := dns.DialTimeout("udp", upstream.addr, timeout)
 	if err != nil {
 		return
 	}
 
 	defer conn.Close()
 
+	conn.SetWriteDeadline(time.Now().Add(timeout))
 	if err = conn.WriteMsg(m); err != nil {
+		log.Warn("cannot write to upstream %s", upstream.addr)
 		return
 	}
 
+	conn.SetReadDeadline(time.Now().Add(timeout))
 	a, err := conn.ReadMsg()
 	if err != nil {
 		return
@@ -199,12 +204,13 @@ func relayResolve(upstream *resolver, delay time.Duration,
 		return
 	}
 
+	// anti-GFW tricks, delay for real answer
 	var answers []*dns.Msg
 	answers = append(answers, a)
-	// hack for GFW
 	ch := make(chan *dns.Msg, 5)
 	go func() {
 		for {
+			conn.SetReadDeadline(time.Now().Add(timeout))
 			a, err := conn.ReadMsg()
 			if err != nil {
 				return
@@ -277,8 +283,8 @@ func relayClean(answers []*dns.Msg) *dns.Msg {
 	var lowerTTL *dns.Msg
 	minTtl := uint32(86400)
 	for _, a := range answers {
+		// gfw's reply only contains 1 A record with very large ttl
 		if len(a.Answer) != 1 {
-			// gfw's reply only contains 1 A record with very large ttl
 			return a
 		}
 
@@ -289,9 +295,9 @@ func relayClean(answers []*dns.Msg) *dns.Msg {
 		}
 	}
 
+	// reduce the affection in case that we've selected a wrong
+	// answer.
 	if lowerTTL != nil && lowerTTL.Answer[0].Header().Ttl > 1800 {
-		// reduce the affection in case that we've selected a wrong
-		// answer.
 		lowerTTL.Answer[0].Header().Ttl = 300
 	}
 	return lowerTTL
