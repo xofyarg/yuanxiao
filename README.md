@@ -18,7 +18,7 @@ sources with a specific order can achieve multiple purpose.
 
 To build yuanxiao, you need a working go compiler, then just go-get it:
 ```shell
-go get repo.anb.im/yuanxiao
+go get go.papla.net/yuanxiao
 ```
 Like other golang program, you'll get a single binary ready to run.
 

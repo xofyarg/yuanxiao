@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/miekg/dns"
-	"repo.anb.im/goutil/log"
+	"go.papla.net/goutil/log"
 
-	"repo.anb.im/yuanxiao/source"
+	"go.papla.net/yuanxiao/source"
 
-	"repo.anb.im/goutil/option"
+	"go.papla.net/goutil/option"
 )
 
 type context struct {

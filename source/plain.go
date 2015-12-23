@@ -11,7 +11,7 @@ import (
 
 	"github.com/miekg/dns"
 
-	"repo.anb.im/goutil/log"
+	"go.papla.net/goutil/log"
 )
 
 func init() {

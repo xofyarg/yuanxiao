@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"repo.anb.im/goutil/log"
-	"repo.anb.im/goutil/option"
+	"go.papla.net/goutil/log"
+	"go.papla.net/goutil/option"
 
-	"repo.anb.im/yuanxiao/source"
+	"go.papla.net/yuanxiao/source"
 )
 
 func main() {

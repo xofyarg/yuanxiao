@@ -7,9 +7,9 @@ import (
 	"github.com/golang/groupcache/lru"
 	"github.com/miekg/dns"
 
-	"repo.anb.im/goutil/log"
+	"go.papla.net/goutil/log"
 
-	"repo.anb.im/yuanxiao/source"
+	"go.papla.net/yuanxiao/source"
 )
 
 type Cache struct {
