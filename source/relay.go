@@ -24,7 +24,7 @@ type result struct {
 
 type resolver struct {
 	addr       string
-	unpolluted bool
+	spoofing   bool
 }
 
 type relay struct {
@@ -59,9 +59,9 @@ func (r *relay) Reload(o map[string]string) error {
 		s := strings.TrimSpace(u)
 
 		resolv := &resolver{}
-		if strings.HasSuffix(s, "U") {
+		if strings.HasSuffix(s, "?") {
 			s = s[:len(s)-1]
-			resolv.unpolluted = true
+			resolv.spoofing = true
 		}
 
 		if _, _, err := net.SplitHostPort(s); err == nil {
@@ -99,14 +99,14 @@ func (r *relay) Reload(o map[string]string) error {
 		delay = delay
 	}
 
-	haveU := false
+	spoofing := false
 	for _, u := range upstreams {
-		if u.unpolluted {
-			haveU = true
+		if u.spoofing {
+			spoofing = true
 		}
 	}
-	if delay != 0 && !haveU {
-		log.Infof("using polluted source with non-zero delay")
+	if !spoofing && delay != 0 {
+		log.Warnf("delay enabled with no spoofing server")
 	}
 
 	r.Lock()
@@ -249,7 +249,7 @@ func relayResolve(upstream *resolver,
 	}
 }
 
-// return filtered answer if polluted, else the local one
+// return filtered answer if polluted, else the local one for CDN
 func relayChoose(rs []*result) *dns.Msg {
 	if len(rs) == 0 {
 		return nil
@@ -261,7 +261,7 @@ func relayChoose(rs []*result) *dns.Msg {
 			filtered = r
 		}
 
-		if !r.upstream.unpolluted {
+		if r.upstream.spoofing {
 			local = r
 		}
 	}
