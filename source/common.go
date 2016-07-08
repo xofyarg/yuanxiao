@@ -24,7 +24,7 @@ var Sources = map[string]Source{}
 
 func registerSource(name string, obj Source) {
 	Sources[name] = obj
-	log.Info("register a source: %s", name)
+	log.Infof("register a source: %s", name)
 }
 
 type Answer struct {
@@ -196,7 +196,7 @@ func (s *Srecords) Add(r dns.RR, n *net.IPNet) {
 		if n.String() == v.n.String() {
 			// check if records has a cname. (p15 of rfc1034)
 			if header.Rrtype == dns.TypeCNAME {
-				log.Info("overwrite all the previous records by a CNAME record: %s", header.Name)
+				log.Infof("overwrite all the previous records by a CNAME record: %s", header.Name)
 				v.r = []dns.RR{r}
 			} else {
 				v.r = append(v.r, r)

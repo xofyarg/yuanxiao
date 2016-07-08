@@ -64,7 +64,7 @@ func (c *Cache) Get(key string) (*source.Answer, bool) {
 	defer c.Unlock()
 	value, ok := c.lru.Get(key)
 	if !ok {
-		log.Debug("cache miss for key: %s", key)
+		log.Debugf("cache miss for key: %s", key)
 		return nil, false
 	}
 
@@ -95,7 +95,7 @@ func checkTTL(sec []dns.RR, elapse uint32) ([]dns.RR, bool) {
 	var newsec []dns.RR
 	for _, rr := range sec {
 		if rr.Header().Ttl <= elapse {
-			log.Debug("ttl expire: %s, elapse: %d", rr, elapse)
+			log.Debugf("ttl expire: %s, elapse: %d", rr, elapse)
 			return nil, false
 		}
 		newrr := dns.Copy(rr)

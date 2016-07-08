@@ -22,17 +22,17 @@ func main() {
 	if addr := option.GetString("server.pprof.addr"); addr != "" {
 		go func() {
 			err := http.ListenAndServe(addr, nil)
-			log.Warn("cannot start pprof server: %s", err)
+			log.Warnf("cannot start pprof server: %s", err)
 		}()
 	}
 
 	if err := serverInit(); err != nil {
-		log.Fatal("server init: %s", err)
+		log.Fatalf("server init: %s", err)
 		os.Exit(1)
 	}
 
 	if err := serverStart(); err != nil {
-		log.Fatal("cannot start server: %s", err)
+		log.Fatalf("cannot start server: %s", err)
 		os.Exit(1)
 	}
 }
@@ -82,7 +82,7 @@ func parseArgs() {
 
 	// first, parse args to find the config path
 	if err := option.Parse(); err != nil {
-		log.Fatal("fail to parse options: %s", err)
+		log.Fatalf("fail to parse options: %s", err)
 		os.Exit(1)
 	}
 
@@ -101,12 +101,12 @@ func parseArgs() {
 
 	// try to load config, ignore error
 	if err := option.LoadConfig(option.GetString("config.path")); err != nil {
-		log.Warn("fail to parse options: %s", err)
+		log.Warnf("fail to parse options: %s", err)
 	}
 
 	// parse cli args again to overwrite config value
 	if err := option.Parse(); err != nil {
-		log.Fatal("fail to parse options: %s", err)
+		log.Fatalf("fail to parse options: %s", err)
 		os.Exit(1)
 	}
 
@@ -121,9 +121,9 @@ func setupSignals() {
 	for s := range sig {
 		switch s {
 		case syscall.SIGHUP:
-			log.Info("server reloading")
+			log.Infof("server reloading")
 			if err := serverReload(); err != nil {
-				log.Warn("server reload failed: %s", err)
+				log.Warnf("server reload failed: %s", err)
 			}
 		default:
 		}

@@ -41,12 +41,12 @@ func serverInit() error {
 
 		opt := getoption(s)
 		if err = obj.Reload(opt); err != nil {
-			log.Debug("failed to config source: %s", s)
+			log.Debugf("failed to config source: %s", s)
 			return err
 		}
 
 		sources = append(sources, obj)
-		log.Info("source %s loaded", s)
+		log.Infof("source %s loaded", s)
 	}
 
 	cache = NewCache(option.GetInt("server.cache.size"), option.GetDuration("server.cache.timeout"))
@@ -56,7 +56,7 @@ func serverInit() error {
 	server.Net = "udp"
 	server.Handler = dns.HandlerFunc(rootHandler)
 	server.NotifyStartedFunc = func() {
-		log.Info("server started")
+		log.Infof("server started")
 	}
 
 	if GlobalContext == nil {
@@ -152,7 +152,7 @@ func rootHandler(w dns.ResponseWriter, m *dns.Msg) {
 			}
 		}
 	}
-	log.Debug("query from client: %s", client)
+	log.Debugf("query from client: %s", client)
 
 	key := fmt.Sprintf("%s %s %s", q.Name, dns.ClassToString[q.Qclass], dns.TypeToString[q.Qtype])
 	if entry, ok := cache.Get(key); !ok {
@@ -160,7 +160,7 @@ func rootHandler(w dns.ResponseWriter, m *dns.Msg) {
 		delegation := false
 		recursion := false
 		for _, obj := range sources {
-			log.Debug("try to get answer from: %s", obj)
+			log.Debugf("try to get answer from: %s", obj)
 			answer = obj.Query(q.Name, q.Qtype, client)
 
 			// if one of the sources is authoritative, also has this
@@ -197,9 +197,9 @@ func rootHandler(w dns.ResponseWriter, m *dns.Msg) {
 
 		// put into cache
 		cache.Put(key, answer)
-		log.Debug("add to cache: %s", key)
+		log.Debugf("add to cache: %s", key)
 	} else {
-		log.Debug("get from cache: %s", key)
+		log.Debugf("get from cache: %s", key)
 		a.Answer = entry.An
 		a.Ns = entry.Ns
 		a.Extra = entry.Ex

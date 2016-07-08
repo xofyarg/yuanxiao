@@ -123,7 +123,7 @@ func plainLoad(path string) (*node, error) {
 	f := func(path string, info os.FileInfo, err error) error {
 		result := "success"
 		defer func() {
-			log.Debug("loading file: %s(%s)", path, result)
+			log.Debugf("loading file: %s(%s)", path, result)
 		}()
 
 		if err != nil {
@@ -178,7 +178,7 @@ func plainLoadFile(path string, root *node) error {
 			return t.Error
 		}
 
-		log.Debug("add to tree: %s [%s]", t.RR, sub)
+		log.Debugf("add to tree: %s [%s]", t.RR, sub)
 		plainAddToNode(root, sub, t.RR)
 	}
 	return nil

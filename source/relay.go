@@ -106,7 +106,7 @@ func (r *relay) Reload(o map[string]string) error {
 		}
 	}
 	if delay != 0 && !haveU {
-		log.Info("using polluted source with non-zero delay")
+		log.Infof("using polluted source with non-zero delay")
 	}
 
 	r.Lock()
@@ -185,7 +185,7 @@ func relayResolve(upstream *resolver,
 
 	conn.SetWriteDeadline(time.Now().Add(timeout))
 	if err = conn.WriteMsg(m); err != nil {
-		log.Warn("cannot write to upstream %s", upstream.addr)
+		log.Warnf("cannot write to upstream %s", upstream.addr)
 		return
 	}
 
@@ -237,9 +237,10 @@ func relayResolve(upstream *resolver,
 	if len(answers) == 1 {
 		res.response = answers[0]
 	} else {
-		log.Debug("find real answer from %d responses for query: %s", len(answers), qname)
 		res.response = relayClean(answers)
 		res.filtered = true
+		log.Debugf("analyze %d responses from %s for query: %s",
+			len(answers), res.upstream.addr, qname)
 	}
 
 	select {
@@ -266,16 +267,16 @@ func relayChoose(rs []*result) *dns.Msg {
 	}
 
 	if filtered != nil {
-		log.Debug("using filtered answer from %s", filtered.upstream.addr)
+		log.Debugf("using filtered answer from %s", filtered.upstream.addr)
 		return filtered.response
 	}
 
 	if local != nil {
-		log.Debug("using local answer from %s", local.upstream.addr)
+		log.Debugf("using local answer from %s", local.upstream.addr)
 		return local.response
 	}
 
-	log.Debug("no local answer, use %s", rs[0].upstream.addr)
+	log.Debugf("no local answer, use %s", rs[0].upstream.addr)
 	return rs[0].response
 }
 
